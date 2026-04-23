@@ -39,7 +39,7 @@ func _physics_process(delta: float) -> void:
 	shoot_timer = maxf(shoot_timer - delta, 0.0)
 	if enemy_type == "shooter" and shoot_timer <= 0.0 and distance <= preferred_range + 120.0 and _has_line_of_sight():
 		shoot_timer = shoot_cooldown
-		world.spawn_bullet(global_position + direction * 18.0, direction, 520.0, 1, "enemy_bullets", "player", Color(1, 0.556863, 0.556863, 1))
+		world.spawn_bullet(global_position, global_position + direction * 18.0, direction, 520.0, 1, "enemy_bullets", "player", Color(1, 0.556863, 0.556863, 1))
 
 func take_damage(amount: int) -> void:
 	health -= amount

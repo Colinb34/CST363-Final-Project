@@ -27,7 +27,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_pressed("shoot") and fire_timer <= 0.0 and world != null:
 		fire_timer = fire_cooldown
 		var bullet_direction := (get_global_mouse_position() - global_position).normalized()
-		world.spawn_bullet(global_position + bullet_direction * 20.0, bullet_direction, bullet_speed, bullet_damage, "player_bullets", "enemy", Color(0.541176, 0.929412, 1, 1))
+		world.spawn_bullet(global_position, global_position + bullet_direction * 20.0, bullet_direction, bullet_speed, bullet_damage, "player_bullets", "enemy", Color(0.541176, 0.929412, 1, 1))
 
 func take_damage(amount: int) -> void:
 	health -= amount

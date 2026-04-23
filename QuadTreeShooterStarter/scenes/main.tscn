@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://ce4eplr8wf0nh"]
+[gd_scene load_steps=11 format=3 uid="uid://ce4eplr8wf0nh"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_l4a7f"]
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_7x6y4"]
@@ -6,10 +6,10 @@
 [ext_resource type="PackedScene" path="res://scenes/enemy_shooter.tscn" id="4_a59tw"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_boundary_top"]
-size = Vector2(1280, 32)
+size = Vector2(2560, 32)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_boundary_side"]
-size = Vector2(32, 720)
+size = Vector2(32, 1600)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_obstacle_box"]
 size = Vector2(140, 140)
@@ -17,75 +17,162 @@ size = Vector2(140, 140)
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_obstacle_bar"]
 size = Vector2(220, 60)
 
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_long_h"]
+size = Vector2(420, 56)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_long_v"]
+size = Vector2(56, 360)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_medium_h"]
+size = Vector2(300, 56)
+
 [node name="Main" type="Node2D"]
 script = ExtResource("1_l4a7f")
 
 [node name="Arena" type="Node2D" parent="."]
 
 [node name="Background" type="ColorRect" parent="Arena"]
-offset_right = 1280.0
-offset_bottom = 720.0
+offset_right = 2560.0
+offset_bottom = 1600.0
 color = Color(0.0862745, 0.105882, 0.129412, 1)
 
 [node name="Player" parent="Arena" instance=ExtResource("2_7x6y4")]
-position = Vector2(160, 360)
+position = Vector2(220, 800)
 
 [node name="Enemies" type="Node2D" parent="Arena"]
 
 [node name="EnemyChaserA" parent="Arena/Enemies" instance=ExtResource("3_6h0h8")]
-position = Vector2(980, 180)
+position = Vector2(1040, 360)
 
 [node name="EnemyChaserB" parent="Arena/Enemies" instance=ExtResource("3_6h0h8")]
-position = Vector2(1080, 560)
+position = Vector2(1480, 1210)
+
+[node name="EnemyChaserC" parent="Arena/Enemies" instance=ExtResource("3_6h0h8")]
+position = Vector2(2160, 420)
 
 [node name="EnemyShooterA" parent="Arena/Enemies" instance=ExtResource("4_a59tw")]
-position = Vector2(1040, 320)
+position = Vector2(1260, 810)
 
 [node name="EnemyShooterB" parent="Arena/Enemies" instance=ExtResource("4_a59tw")]
-position = Vector2(760, 620)
+position = Vector2(1920, 1180)
+
+[node name="EnemyShooterC" parent="Arena/Enemies" instance=ExtResource("4_a59tw")]
+position = Vector2(2290, 760)
 
 [node name="Obstacles" type="Node2D" parent="Arena"]
 
-[node name="CenterBlock" type="StaticBody2D" parent="Arena/Obstacles"]
-position = Vector2(640, 360)
+[node name="SpawnCover" type="StaticBody2D" parent="Arena/Obstacles"]
+position = Vector2(420, 800)
 collision_layer = 2
 collision_mask = 0
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/CenterBlock"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/SpawnCover"]
 shape = SubResource("RectangleShape2D_obstacle_box")
 
-[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/CenterBlock"]
+[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/SpawnCover"]
 polygon = PackedVector2Array(-70, -70, 70, -70, 70, 70, -70, 70)
 color = Color(0.329412, 0.360784, 0.419608, 1)
 
-[node name="UpperBar" type="StaticBody2D" parent="Arena/Obstacles"]
-position = Vector2(410, 200)
+[node name="NorthHall" type="StaticBody2D" parent="Arena/Obstacles"]
+position = Vector2(760, 300)
 collision_layer = 2
 collision_mask = 0
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/UpperBar"]
-shape = SubResource("RectangleShape2D_obstacle_bar")
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/NorthHall"]
+shape = SubResource("RectangleShape2D_wall_long_h")
 
-[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/UpperBar"]
-polygon = PackedVector2Array(-110, -30, 110, -30, 110, 30, -110, 30)
+[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/NorthHall"]
+polygon = PackedVector2Array(-210, -28, 210, -28, 210, 28, -210, 28)
 color = Color(0.329412, 0.360784, 0.419608, 1)
 
-[node name="LowerBar" type="StaticBody2D" parent="Arena/Obstacles"]
-position = Vector2(880, 500)
+[node name="NorthDivider" type="StaticBody2D" parent="Arena/Obstacles"]
+position = Vector2(1140, 520)
 collision_layer = 2
 collision_mask = 0
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/LowerBar"]
-shape = SubResource("RectangleShape2D_obstacle_bar")
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/NorthDivider"]
+shape = SubResource("RectangleShape2D_wall_long_v")
 
-[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/LowerBar"]
-polygon = PackedVector2Array(-110, -30, 110, -30, 110, 30, -110, 30)
+[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/NorthDivider"]
+polygon = PackedVector2Array(-28, -180, 28, -180, 28, 180, -28, 180)
+color = Color(0.329412, 0.360784, 0.419608, 1)
+
+[node name="CenterHallWest" type="StaticBody2D" parent="Arena/Obstacles"]
+position = Vector2(980, 820)
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/CenterHallWest"]
+shape = SubResource("RectangleShape2D_wall_long_h")
+
+[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/CenterHallWest"]
+polygon = PackedVector2Array(-210, -28, 210, -28, 210, 28, -210, 28)
+color = Color(0.329412, 0.360784, 0.419608, 1)
+
+[node name="CenterHallEast" type="StaticBody2D" parent="Arena/Obstacles"]
+position = Vector2(1580, 820)
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/CenterHallEast"]
+shape = SubResource("RectangleShape2D_wall_long_h")
+
+[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/CenterHallEast"]
+polygon = PackedVector2Array(-210, -28, 210, -28, 210, 28, -210, 28)
+color = Color(0.329412, 0.360784, 0.419608, 1)
+
+[node name="SouthPocket" type="StaticBody2D" parent="Arena/Obstacles"]
+position = Vector2(820, 1260)
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/SouthPocket"]
+shape = SubResource("RectangleShape2D_wall_medium_h")
+
+[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/SouthPocket"]
+polygon = PackedVector2Array(-150, -28, 150, -28, 150, 28, -150, 28)
+color = Color(0.329412, 0.360784, 0.419608, 1)
+
+[node name="SouthDivider" type="StaticBody2D" parent="Arena/Obstacles"]
+position = Vector2(1400, 1260)
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/SouthDivider"]
+shape = SubResource("RectangleShape2D_wall_long_v")
+
+[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/SouthDivider"]
+polygon = PackedVector2Array(-28, -180, 28, -180, 28, 180, -28, 180)
+color = Color(0.329412, 0.360784, 0.419608, 1)
+
+[node name="EastUpper" type="StaticBody2D" parent="Arena/Obstacles"]
+position = Vector2(1970, 430)
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/EastUpper"]
+shape = SubResource("RectangleShape2D_wall_medium_h")
+
+[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/EastUpper"]
+polygon = PackedVector2Array(-150, -28, 150, -28, 150, 28, -150, 28)
+color = Color(0.329412, 0.360784, 0.419608, 1)
+
+[node name="EastLower" type="StaticBody2D" parent="Arena/Obstacles"]
+position = Vector2(2140, 1080)
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Obstacles/EastLower"]
+shape = SubResource("RectangleShape2D_obstacle_box")
+
+[node name="Visual" type="Polygon2D" parent="Arena/Obstacles/EastLower"]
+polygon = PackedVector2Array(-70, -70, 70, -70, 70, 70, -70, 70)
 color = Color(0.329412, 0.360784, 0.419608, 1)
 
 [node name="Boundaries" type="Node2D" parent="Arena"]
 
 [node name="TopWall" type="StaticBody2D" parent="Arena/Boundaries"]
-position = Vector2(640, 0)
+position = Vector2(1280, 0)
 collision_layer = 2
 collision_mask = 0
 
@@ -94,7 +181,7 @@ position = Vector2(0, 16)
 shape = SubResource("RectangleShape2D_boundary_top")
 
 [node name="BottomWall" type="StaticBody2D" parent="Arena/Boundaries"]
-position = Vector2(640, 720)
+position = Vector2(1280, 1600)
 collision_layer = 2
 collision_mask = 0
 
@@ -103,7 +190,7 @@ position = Vector2(0, -16)
 shape = SubResource("RectangleShape2D_boundary_top")
 
 [node name="LeftWall" type="StaticBody2D" parent="Arena/Boundaries"]
-position = Vector2(0, 360)
+position = Vector2(0, 800)
 collision_layer = 2
 collision_mask = 0
 
@@ -112,7 +199,7 @@ position = Vector2(16, 0)
 shape = SubResource("RectangleShape2D_boundary_side")
 
 [node name="RightWall" type="StaticBody2D" parent="Arena/Boundaries"]
-position = Vector2(1280, 360)
+position = Vector2(2560, 800)
 collision_layer = 2
 collision_mask = 0
 
@@ -127,7 +214,7 @@ shape = SubResource("RectangleShape2D_boundary_side")
 [node name="Instructions" type="Label" parent="UI"]
 offset_left = 14.0
 offset_top = 12.0
-offset_right = 415.0
-offset_bottom = 83.0
+offset_right = 475.0
+offset_bottom = 102.0
 theme_override_colors/font_color = Color(0.929412, 0.941176, 0.960784, 1)
-text = "WASD to move, left click to shoot.\nGreen circles chase. Red triangles keep distance and fire.\nWalls block both movement and bullets."
+text = "WASD to move, left click to shoot.\nExplore the larger map with the follow camera.\nWalls block movement and bullets, so use lanes and cover."

@@ -1,6 +1,6 @@
 extends Node2D
 
-const WORLD_SIZE := Vector2(1280, 720)
+const WORLD_SIZE := Vector2(2560, 1600)
 
 @export var bullet_scene: PackedScene = preload("res://scenes/bullet.tscn")
 
@@ -10,11 +10,16 @@ var player: CharacterBody2D
 @onready var arena: Node2D = $Arena
 @onready var projectiles: Node2D = $Arena/Projectiles
 @onready var enemies_root: Node2D = $Arena/Enemies
+@onready var player_camera: Camera2D = $Arena/Player/Camera2D
 
 func _ready() -> void:
 	player = $Arena/Player
 	player.world = self
 	quadtree = QuadTree.new(Rect2(Vector2.ZERO, WORLD_SIZE))
+	player_camera.limit_left = 0
+	player_camera.limit_top = 0
+	player_camera.limit_right = int(WORLD_SIZE.x)
+	player_camera.limit_bottom = int(WORLD_SIZE.y)
 
 	for enemy in enemies_root.get_children():
 		enemy.player = player
@@ -24,7 +29,10 @@ func _physics_process(_delta: float) -> void:
 	_rebuild_quadtree()
 	_cleanup_invalid_enemy_refs()
 
-func spawn_bullet(start_position: Vector2, direction: Vector2, bullet_speed: float, damage: int, owner_group: String, target_group: String, tint: Color) -> void:
+func spawn_bullet(source_position: Vector2, start_position: Vector2, direction: Vector2, bullet_speed: float, damage: int, owner_group: String, target_group: String, tint: Color) -> void:
+	if _wall_blocks_spawn(source_position, start_position):
+		return
+
 	var bullet := bullet_scene.instantiate()
 	projectiles.add_child(bullet)
 	bullet.setup(start_position, direction, bullet_speed, damage, owner_group, target_group, self, tint)
@@ -72,3 +80,9 @@ func _cleanup_invalid_enemy_refs() -> void:
 			child.player = player
 		if child.world == null:
 			child.world = self
+
+func _wall_blocks_spawn(source_position: Vector2, start_position: Vector2) -> bool:
+	var query := PhysicsRayQueryParameters2D.create(source_position, start_position)
+	query.collision_mask = 2
+	var hit := get_world_2d().direct_space_state.intersect_ray(query)
+	return not hit.is_empty()
