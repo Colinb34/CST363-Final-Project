@@ -1,0 +1,21 @@
+#!/usr/bin/env python
+import os
+
+env = SConscript("external/godot-cpp/SConstruct")
+
+library_name = "topdown_shooter"
+env.Append(CPPPATH=["src"])
+
+sources = []
+for root, _, files in os.walk("src"):
+    for name in files:
+        if name.endswith(".cpp"):
+            sources.append(os.path.join(root, name))
+
+library = env.SharedLibrary(
+    target=os.path.join("..", "bin", "lib{}{}{}".format(library_name, env["suffix"], env["SHLIBSUFFIX"])),
+    source=sources,
+)
+
+env.NoCache(library)
+Default(library)

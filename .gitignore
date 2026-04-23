@@ -1,0 +1,28 @@
+# Godot editor and import cache
+.godot/
+*.import
+
+# Build outputs
+bin/
+artifacts/
+*.dll
+*.lib
+*.exp
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.out
+
+# SCons / C++ build state
+cpp/.sconsign.dblite
+cpp/.sconf_temp/
+cpp/compile_commands.json
+
+# Local dependency/build trees
+cpp/external/godot-cpp/bin/
+cpp/external/godot-cpp/gen/
+
+# Logs and archives
+*.log
+*.zip
