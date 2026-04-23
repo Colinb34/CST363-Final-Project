@@ -1,0 +1,23 @@
+[gd_scene load_steps=3 format=3 uid="uid://dr7u7teihbsgx"]
+
+[ext_resource type="Script" path="res://scripts/enemy.gd" id="1_55p2r"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_8tdob"]
+radius = 14.0
+
+[node name="EnemyShooter" type="CharacterBody2D"]
+collision_layer = 4
+collision_mask = 2
+script = ExtResource("1_55p2r")
+enemy_type = "shooter"
+move_speed = 85.0
+max_health = 4
+shoot_cooldown = 0.9
+preferred_range = 300.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_8tdob")
+
+[node name="Body" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(16, 0, -10, -12, -10, 12)
+color = Color(0.913725, 0.419608, 0.384314, 1)

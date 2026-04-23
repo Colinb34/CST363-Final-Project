@@ -1,0 +1,23 @@
+[gd_scene load_steps=3 format=3 uid="uid://cs2j24v5bmj12"]
+
+[ext_resource type="Script" path="res://scripts/enemy.gd" id="1_7x4b6"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_2y2qk"]
+radius = 14.0
+
+[node name="EnemyChaser" type="CharacterBody2D"]
+collision_layer = 4
+collision_mask = 2
+script = ExtResource("1_7x4b6")
+enemy_type = "chaser"
+move_speed = 120.0
+max_health = 3
+shoot_cooldown = 1.4
+preferred_range = 280.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_2y2qk")
+
+[node name="Body" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(14, 0, 9.8995, 9.8995, 0, 14, -9.8995, 9.8995, -14, 0, -9.8995, -9.8995, 0, -14, 9.8995, -9.8995)
+color = Color(0.478431, 0.905882, 0.423529, 1)
