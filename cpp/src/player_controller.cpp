@@ -56,7 +56,12 @@ void PlayerController::_physics_process(double delta) {
 }
 
 bool PlayerController::try_shoot(const Vector2 &) {
-    if (is_reloading() || bullets_in_magazine <= 0) {
+    if (is_reloading()) {
+        return false;
+    }
+
+    if (bullets_in_magazine <= 0) {
+        reload();
         return false;
     }
 

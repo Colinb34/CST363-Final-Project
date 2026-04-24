@@ -77,6 +77,12 @@ private:
         real_t damage_tick_timer = 0.0;
     };
 
+    struct Structure {
+        Rect2 bounds;
+        Color fill_color;
+        Color accent_color;
+    };
+
     enum class SpatialItemKind : uint8_t {
         ENEMY,
         ENEMY_WAVE,
@@ -116,6 +122,7 @@ private:
     std::vector<Pickup> pickups;
     std::vector<OilBarrel> oil_barrels;
     std::vector<FireHazard> fire_hazards;
+    std::vector<Structure> structures;
     std::vector<SpatialItem> spatial_items;
     std::vector<Rect2> quadtree_debug_bounds;
     std::vector<Rect2> quadtree_debug_queries;
@@ -128,6 +135,8 @@ private:
     void create_hud();
     void create_game_over_dialog();
     void apply_camera_view_mode();
+    void ensure_input_actions();
+    void create_structures();
     void create_enemies();
     void create_oil_barrels();
     void create_pickups();
@@ -151,6 +160,9 @@ private:
     bool is_enemy_position_valid(const Vector2 &position) const;
     bool is_barrel_position_valid(const Vector2 &position) const;
     bool is_pickup_position_valid(const Vector2 &position) const;
+    bool intersects_structure(const Rect2 &rect) const;
+    bool segment_hits_structure(const Vector2 &from, const Vector2 &to) const;
+    Vector2 resolve_character_position(const Vector2 &position, real_t radius) const;
     const Pickup *find_nearest_pickup_in_range(real_t max_distance) const;
     PackedVector2Array build_pentagon_points(const Vector2 &center, real_t radius, real_t rotation = -Math_PI / 2.0) const;
     PackedVector2Array build_diamond_points(const Vector2 &center, real_t width_radius, real_t height_radius) const;

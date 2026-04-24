@@ -5,7 +5,9 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/geometry2d.hpp>
 #include <godot_cpp/classes/input_event.hpp>
+#include <godot_cpp/classes/input_event_key.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
+#include <godot_cpp/classes/input_map.hpp>
 #include <godot_cpp/classes/scene_tree.hpp>
 #include <godot_cpp/classes/window.hpp>
 #include <godot_cpp/variant/callable.hpp>
@@ -22,16 +24,65 @@ void GameWorld::_bind_methods() {
 void GameWorld::_ready() {
     rng.instantiate();
     rng->randomize();
+    ensure_input_actions();
     create_player();
     create_camera();
     create_hud();
     create_game_over_dialog();
+    create_structures();
     create_enemies();
     create_oil_barrels();
     create_pickups();
     set_process(true);
     set_process_unhandled_input(true);
     queue_redraw();
+}
+
+void GameWorld::ensure_input_actions() {
+    InputMap *input_map = InputMap::get_singleton();
+    if (input_map == nullptr) {
+        return;
+    }
+
+    struct KeyBinding {
+        const char *action;
+        Key keycode;
+    };
+
+    const KeyBinding key_bindings[] = {
+        {"move_up", Key::KEY_W},
+        {"move_down", Key::KEY_S},
+        {"move_left", Key::KEY_A},
+        {"move_right", Key::KEY_D},
+        {"reload", Key::KEY_R},
+        {"toggle_map_view", Key::KEY_M},
+        {"toggle_quadtree_overlay", Key::KEY_U},
+    };
+
+    for (const KeyBinding &binding : key_bindings) {
+        if (!input_map->has_action(binding.action)) {
+            input_map->add_action(binding.action, 0.5);
+        }
+
+        Ref<InputEventKey> event;
+        event.instantiate();
+        event->set_keycode(binding.keycode);
+        event->set_physical_keycode(binding.keycode);
+        if (!input_map->action_has_event(binding.action, event)) {
+            input_map->action_add_event(binding.action, event);
+        }
+    }
+
+    if (!input_map->has_action("shoot")) {
+        input_map->add_action("shoot", 0.5);
+    }
+
+    Ref<InputEventMouseButton> mouse_event;
+    mouse_event.instantiate();
+    mouse_event->set_button_index(MouseButton::MOUSE_BUTTON_LEFT);
+    if (!input_map->action_has_event("shoot", mouse_event)) {
+        input_map->action_add_event("shoot", mouse_event);
+    }
 }
 
 void GameWorld::create_player() {
@@ -60,6 +111,25 @@ void GameWorld::apply_camera_view_mode() {
         ? real_t(GRID_VISIBLE_WIDTH_DEFAULT) / real_t(GRID_VISIBLE_WIDTH_MAP)
         : 1.0f;
     camera->set_zoom(Vector2(zoom_factor, zoom_factor));
+}
+
+void GameWorld::create_structures() {
+    structures.clear();
+
+    const Color wall_fill(0.16f, 0.20f, 0.25f);
+    const Color wall_accent(0.34f, 0.41f, 0.48f);
+    const real_t tile = real_t(TILE_SIZE);
+
+    structures.push_back({Rect2(Vector2(10.0f * tile, 8.0f * tile), Vector2(10.0f * tile, 2.0f * tile)), wall_fill, wall_accent});
+    structures.push_back({Rect2(Vector2(26.0f * tile, 10.0f * tile), Vector2(2.0f * tile, 15.0f * tile)), wall_fill, wall_accent});
+    structures.push_back({Rect2(Vector2(18.0f * tile, 25.0f * tile), Vector2(12.0f * tile, 2.0f * tile)), wall_fill, wall_accent});
+    structures.push_back({Rect2(Vector2(36.0f * tile, 18.0f * tile), Vector2(14.0f * tile, 2.0f * tile)), wall_fill, wall_accent});
+    structures.push_back({Rect2(Vector2(46.0f * tile, 28.0f * tile), Vector2(2.0f * tile, 14.0f * tile)), wall_fill, wall_accent});
+    structures.push_back({Rect2(Vector2(54.0f * tile, 44.0f * tile), Vector2(12.0f * tile, 2.0f * tile)), wall_fill, wall_accent});
+    structures.push_back({Rect2(Vector2(24.0f * tile, 46.0f * tile), Vector2(2.0f * tile, 13.0f * tile)), wall_fill, wall_accent});
+    structures.push_back({Rect2(Vector2(11.0f * tile, 55.0f * tile), Vector2(14.0f * tile, 2.0f * tile)), wall_fill, wall_accent});
+    structures.push_back({Rect2(Vector2(60.0f * tile, 14.0f * tile), Vector2(9.0f * tile, 9.0f * tile)), wall_fill, wall_accent});
+    structures.push_back({Rect2(Vector2(58.0f * tile, 58.0f * tile), Vector2(8.0f * tile, 8.0f * tile)), wall_fill, wall_accent});
 }
 
 void GameWorld::create_hud() {
@@ -216,9 +286,10 @@ void GameWorld::clamp_player_to_map() {
     }
 
     Vector2 pos = player->get_position();
-    pos.x = Math::clamp<real_t>(pos.x, real_t(0.0), real_t(MAP_WIDTH_TILES * TILE_SIZE));
-    pos.y = Math::clamp<real_t>(pos.y, real_t(0.0), real_t(MAP_HEIGHT_TILES * TILE_SIZE));
-    player->set_position(pos);
+    const real_t player_radius = 18.0f;
+    pos.x = Math::clamp<real_t>(pos.x, player_radius, real_t(MAP_WIDTH_TILES * TILE_SIZE) - player_radius);
+    pos.y = Math::clamp<real_t>(pos.y, player_radius, real_t(MAP_HEIGHT_TILES * TILE_SIZE) - player_radius);
+    player->set_position(resolve_character_position(pos, player_radius));
 }
 
 void GameWorld::check_game_over() {
@@ -290,6 +361,12 @@ void GameWorld::update_bullets(double delta) {
 
     for (Bullet &bullet : bullets) {
         if (bullet.lifetime > bullet_lifetime) {
+            continue;
+        }
+
+        const Vector2 previous_position = bullet.position - (bullet.velocity * float(delta));
+        if (segment_hits_structure(previous_position, bullet.position)) {
+            bullet.lifetime = bullet_lifetime + 1.0f;
             continue;
         }
 
@@ -417,6 +494,7 @@ void GameWorld::update_enemies(double delta) {
                 enemy->set_velocity(Vector2());
             }
             enemy->move_and_slide();
+            enemy->set_position(resolve_character_position(enemy->get_position(), 24.0f));
 
             if (enemy->get_position().distance_to(player->get_position()) <= 24.0f) {
                 if (player->take_damage(1)) {
@@ -439,7 +517,9 @@ void GameWorld::update_enemies(double delta) {
         EnemyWave wave;
         wave.position = enemy->get_position();
         wave.velocity = direction * (700.0f * 0.6f);
-        enemy_waves.push_back(wave);
+        if (!segment_hits_structure(enemy->get_position(), enemy->get_position() + (direction * 28.0f))) {
+            enemy_waves.push_back(wave);
+        }
         enemy->reset_shot_cooldown();
     }
 }
@@ -472,8 +552,12 @@ void GameWorld::update_enemy_waves(double delta) {
     }
 
     for (EnemyWave &wave : enemy_waves) {
+        const Vector2 previous_position = wave.position;
         wave.position += wave.velocity * float(delta);
         wave.lifetime += float(delta);
+        if (segment_hits_structure(previous_position, wave.position)) {
+            wave.lifetime = wave_lifetime + 1.0f;
+        }
     }
 }
 
@@ -780,6 +864,10 @@ void GameWorld::query_quadtree_node(const QuadtreeNode &node, const Rect2 &area,
 }
 
 bool GameWorld::is_enemy_position_valid(const Vector2 &position) const {
+    if (intersects_structure(Rect2(position - Vector2(28.0f, 28.0f), Vector2(56.0f, 56.0f)))) {
+        return false;
+    }
+
     if (player != nullptr) {
         const real_t player_buffer = real_t((PICKUP_PLAYER_BUFFER_TILES + 4) * TILE_SIZE);
         if (position.distance_to(player->get_position()) < player_buffer) {
@@ -797,6 +885,10 @@ bool GameWorld::is_enemy_position_valid(const Vector2 &position) const {
 }
 
 bool GameWorld::is_barrel_position_valid(const Vector2 &position) const {
+    if (intersects_structure(Rect2(position - Vector2(24.0f, 24.0f), Vector2(48.0f, 48.0f)))) {
+        return false;
+    }
+
     if (player != nullptr) {
         const real_t player_buffer = real_t((PICKUP_PLAYER_BUFFER_TILES + 2) * TILE_SIZE);
         if (position.distance_to(player->get_position()) < player_buffer) {
@@ -826,6 +918,10 @@ bool GameWorld::is_barrel_position_valid(const Vector2 &position) const {
 }
 
 bool GameWorld::is_pickup_position_valid(const Vector2 &position) const {
+    if (intersects_structure(Rect2(position - Vector2(20.0f, 20.0f), Vector2(40.0f, 40.0f)))) {
+        return false;
+    }
+
     if (player != nullptr) {
         const real_t player_buffer = real_t(PICKUP_PLAYER_BUFFER_TILES * TILE_SIZE);
         if (position.distance_to(player->get_position()) < player_buffer) {
@@ -847,6 +943,85 @@ bool GameWorld::is_pickup_position_valid(const Vector2 &position) const {
     }
 
     return true;
+}
+
+bool GameWorld::intersects_structure(const Rect2 &rect) const {
+    for (const Structure &structure : structures) {
+        if (structure.bounds.intersects(rect)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool GameWorld::segment_hits_structure(const Vector2 &from, const Vector2 &to) const {
+    if (from == to) {
+        return false;
+    }
+
+    Geometry2D *geometry = Geometry2D::get_singleton();
+    if (geometry == nullptr) {
+        return false;
+    }
+
+    for (const Structure &structure : structures) {
+        if (structure.bounds.has_point(from) || structure.bounds.has_point(to)) {
+            return true;
+        }
+
+        const Vector2 top_left = structure.bounds.position;
+        const Vector2 top_right = structure.bounds.position + Vector2(structure.bounds.size.x, 0.0f);
+        const Vector2 bottom_left = structure.bounds.position + Vector2(0.0f, structure.bounds.size.y);
+        const Vector2 bottom_right = structure.bounds.position + structure.bounds.size;
+
+        if (geometry->segment_intersects_segment(from, to, top_left, top_right).get_type() != Variant::NIL ||
+            geometry->segment_intersects_segment(from, to, top_right, bottom_right).get_type() != Variant::NIL ||
+            geometry->segment_intersects_segment(from, to, bottom_right, bottom_left).get_type() != Variant::NIL ||
+            geometry->segment_intersects_segment(from, to, bottom_left, top_left).get_type() != Variant::NIL) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+Vector2 GameWorld::resolve_character_position(const Vector2 &position, real_t radius) const {
+    Vector2 resolved = position;
+
+    for (int iteration = 0; iteration < 4; ++iteration) {
+        bool adjusted = false;
+        for (const Structure &structure : structures) {
+            const Rect2 expanded = structure.bounds.grow(radius);
+            if (!expanded.has_point(resolved)) {
+                continue;
+            }
+
+            const real_t push_left = Math::abs(resolved.x - expanded.position.x);
+            const real_t push_right = Math::abs((expanded.position.x + expanded.size.x) - resolved.x);
+            const real_t push_up = Math::abs(resolved.y - expanded.position.y);
+            const real_t push_down = Math::abs((expanded.position.y + expanded.size.y) - resolved.y);
+
+            const real_t min_push = std::min(std::min(push_left, push_right), std::min(push_up, push_down));
+            if (min_push == push_left) {
+                resolved.x = expanded.position.x;
+            } else if (min_push == push_right) {
+                resolved.x = expanded.position.x + expanded.size.x;
+            } else if (min_push == push_up) {
+                resolved.y = expanded.position.y;
+            } else {
+                resolved.y = expanded.position.y + expanded.size.y;
+            }
+
+            adjusted = true;
+        }
+
+        if (!adjusted) {
+            break;
+        }
+    }
+
+    return resolved;
 }
 
 const GameWorld::Pickup *GameWorld::find_nearest_pickup_in_range(real_t max_distance) const {
@@ -935,6 +1110,22 @@ void GameWorld::_draw() {
     }
 
     draw_rect(Rect2(Vector2(), Vector2(map_pixel_width, map_pixel_height)), boundary_color, false, 3.0f);
+
+    for (const Structure &structure : structures) {
+        draw_rect(structure.bounds, structure.fill_color, true);
+        draw_rect(structure.bounds, structure.accent_color, false, 3.0f);
+
+        const Vector2 stripe_origin = structure.bounds.position + Vector2(10.0f, 10.0f);
+        const real_t stripe_width = std::max(0.0f, structure.bounds.size.x - 20.0f);
+        for (real_t y = stripe_origin.y; y < structure.bounds.position.y + structure.bounds.size.y - 10.0f; y += 26.0f) {
+            draw_line(
+                Vector2(stripe_origin.x, y),
+                Vector2(stripe_origin.x + stripe_width, y),
+                Color(0.42f, 0.49f, 0.56f, 0.45f),
+                2.0f
+            );
+        }
+    }
 
     if (quadtree_overlay_visible) {
         for (const Rect2 &bounds : quadtree_debug_bounds) {
