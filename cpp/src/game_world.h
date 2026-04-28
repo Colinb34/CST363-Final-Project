@@ -98,3 +98,93 @@ private:
     };
 
     struct QuadtreeNode {
+        Rect2 bounds;
+        int depth = 0;
+        bool subdivided = false;
+        std::vector<int> item_indices;
+        std::vector<QuadtreeNode> children;
+    };
+
+    PlayerController *player = nullptr;
+    Camera2D *camera = nullptr;
+    CanvasLayer *hud_layer = nullptr;
+    Label *hud_label = nullptr;
+    AcceptDialog *game_over_dialog = nullptr;
+    Ref<RandomNumberGenerator> rng;
+    bool game_over = false;
+    bool gameplay_paused = false;
+    bool map_view_before_pause = false;
+    bool expanded_map_view = false;
+    bool quadtree_overlay_visible = true;
+    bool quadtree_ready = false;
+    int quadtree_last_candidate_count = 0;
+    std::vector<Enemy *> enemies;
+    std::vector<Bullet> bullets;
+    std::vector<EnemyWave> enemy_waves;
+    std::vector<Pickup> pickups;
+    std::vector<OilBarrel> oil_barrels;
+    std::vector<FireHazard> fire_hazards;
+    std::vector<Structure> structures;
+    std::vector<SpatialItem> spatial_items;
+    std::vector<Rect2> quadtree_debug_bounds;
+    std::vector<Rect2> quadtree_debug_queries;
+    std::vector<Rect2> quadtree_debug_visited;
+    std::vector<Vector2> quadtree_debug_candidates;
+    QuadtreeNode quadtree_root;
+
+    void create_player();
+    void create_camera();
+    void create_hud();
+    void create_game_over_dialog();
+    void set_gameplay_paused(bool paused);
+    void apply_camera_view_mode();
+    void ensure_input_actions();
+    void create_structures();
+    void create_enemies();
+    void create_oil_barrels();
+    void create_pickups();
+    void clamp_player_to_map();
+    void check_game_over();
+    void trigger_game_over();
+    void update_hud();
+    void update_bullets(double delta);
+    void update_enemies(double delta);
+    void update_enemy_waves(double delta);
+    void update_fire_hazards(double delta);
+    void update_pickups();
+    String build_health_pips() const;
+    void rebuild_spatial_index();
+    void clear_quadtree_debug();
+    void collect_spatial_items();
+    void insert_spatial_item(QuadtreeNode &node, int item_index);
+    void subdivide_quadtree_node(QuadtreeNode &node);
+    void query_spatial_items(const Rect2 &area, std::vector<int> &out_indices, bool record_debug = false);
+    void query_quadtree_node(const QuadtreeNode &node, const Rect2 &area, std::vector<int> &out_indices, bool record_debug) const;
+    bool is_enemy_position_valid(const Vector2 &position) const;
+    bool is_barrel_position_valid(const Vector2 &position) const;
+    bool is_pickup_position_valid(const Vector2 &position) const;
+    bool intersects_structure(const Rect2 &rect) const;
+    bool segment_hits_structure(const Vector2 &from, const Vector2 &to) const;
+    Vector2 resolve_character_position(const Vector2 &position, real_t radius) const;
+    const Pickup *find_nearest_pickup_in_range(real_t max_distance) const;
+    PackedVector2Array build_pentagon_points(const Vector2 &center, real_t radius, real_t rotation = -Math_PI / 2.0) const;
+    PackedVector2Array build_diamond_points(const Vector2 &center, real_t width_radius, real_t height_radius) const;
+    PackedVector2Array build_fire_shape_points(const Vector2 &center, real_t radius, real_t elapsed_time, real_t seed, real_t scale = 1.0) const;
+
+protected:
+    static void _bind_methods();
+
+public:
+    GameWorld() = default;
+    ~GameWorld() override = default;
+
+    void restart_game();
+    void _ready() override;
+    void _process(double delta) override;
+    void _draw() override;
+    void _unhandled_input(const Ref<InputEvent> &event) override;
+};
+
+}
+
+#endif
