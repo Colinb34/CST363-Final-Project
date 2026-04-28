@@ -16,7 +16,106 @@
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 
 using namespace godot;
+#include "game_world.h"
 
+#include <algorithm>
+
+#include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/geometry2d.hpp>
+#include <godot_cpp/classes/input_event.hpp>
+#include <godot_cpp/classes/input_event_key.hpp>
+#include <godot_cpp/classes/input_event_mouse_button.hpp>
+#include <godot_cpp/classes/input_map.hpp>
+#include <godot_cpp/classes/scene_tree.hpp>
+#include <godot_cpp/classes/window.hpp>
+#include <godot_cpp/variant/callable.hpp>
+#include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/core/math.hpp>
+#include <godot_cpp/variant/packed_vector2_array.hpp>
+
+using namespace godot;
+
+void GameWorld::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("restart_game"), &GameWorld::restart_game);
+}
+
+void GameWorld::_ready() {
+    rng.instantiate();
+    rng->randomize();
+    ensure_input_actions();
+    create_player();
+    create_camera();
+    create_hud();
+    create_game_over_dialog();
+    create_structures();
+    create_enemies();
+    create_oil_barrels();
+    create_pickups();
+    set_process(true);
+    set_process_unhandled_input(true);
+    queue_redraw();
+}
+
+void GameWorld::ensure_input_actions() {
+    InputMap *input_map = InputMap::get_singleton();
+    if (input_map == nullptr) {
+        return;
+    }
+
+    struct KeyBinding {
+        const char *action;
+        Key keycode;
+    };
+
+    const KeyBinding key_bindings[] = {
+        {"move_up", Key::KEY_W},
+        {"move_down", Key::KEY_S},
+        {"move_left", Key::KEY_A},
+        {"move_right", Key::KEY_D},
+        {"reload", Key::KEY_R},
+        {"toggle_pause", Key::KEY_P},
+        {"toggle_map_view", Key::KEY_M},
+        {"toggle_quadtree_overlay", Key::KEY_U},
+    };
+
+    for (const KeyBinding &binding : key_bindings) {
+        if (!input_map->has_action(binding.action)) {
+            input_map->add_action(binding.action, 0.5);
+        }
+
+        Ref<InputEventKey> event;
+        event.instantiate();
+        event->set_keycode(binding.keycode);
+        event->set_physical_keycode(binding.keycode);
+        if (!input_map->action_has_event(binding.action, event)) {
+            input_map->action_add_event(binding.action, event);
+        }
+    }
+
+    if (!input_map->has_action("shoot")) {
+        input_map->add_action("shoot", 0.5);
+    }
+
+    Ref<InputEventMouseButton> mouse_event;
+    mouse_event.instantiate();
+    mouse_event->set_button_index(MouseButton::MOUSE_BUTTON_LEFT);
+    if (!input_map->action_has_event("shoot", mouse_event)) {
+        input_map->action_add_event("shoot", mouse_event);
+    }
+}
+
+void GameWorld::create_player() {
+    player = memnew(PlayerController);
+    add_child(player);
+    player->set_name("Player");
+    player->set_position(Vector2(MAP_WIDTH_TILES * TILE_SIZE, MAP_HEIGHT_TILES * TILE_SIZE) * 0.5f);
+}
+
+void GameWorld::create_camera() {
+    camera = memnew(Camera2D);
+    player->add_child(camera);
+    camera->set_name("Camera2D");
+    camera->set_enabled(true);
 void GameWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("restart_game"), &GameWorld::restart_game);
 }
