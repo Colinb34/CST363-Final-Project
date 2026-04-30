@@ -16,6 +16,13 @@ void Enemy::_bind_methods() {
     ClassDB::bind_method(D_METHOD("reset_freeze_timer"), &Enemy::reset_freeze_timer);
     ClassDB::bind_method(D_METHOD("update_shot_cooldown", "delta"), &Enemy::update_shot_cooldown);
     ClassDB::bind_method(D_METHOD("update_freeze", "delta"), &Enemy::update_freeze);
+    ClassDB::bind_method(D_METHOD("update_sight_memory", "delta", "has_line_of_sight"), &Enemy::update_sight_memory);
+    ClassDB::bind_method(D_METHOD("has_recent_sight"), &Enemy::has_recent_sight);
+    ClassDB::bind_method(D_METHOD("set_wander_direction", "direction"), &Enemy::set_wander_direction);
+    ClassDB::bind_method(D_METHOD("get_wander_direction"), &Enemy::get_wander_direction);
+    ClassDB::bind_method(D_METHOD("set_wander_timer", "duration"), &Enemy::set_wander_timer);
+    ClassDB::bind_method(D_METHOD("get_wander_timer"), &Enemy::get_wander_timer);
+    ClassDB::bind_method(D_METHOD("update_wander_timer", "delta"), &Enemy::update_wander_timer);
     ClassDB::bind_method(D_METHOD("set_enemy_type", "enemy_type"), &Enemy::set_enemy_type);
     ClassDB::bind_method(D_METHOD("get_enemy_type"), &Enemy::get_enemy_type);
     ClassDB::bind_method(D_METHOD("set_move_speed", "speed"), &Enemy::set_move_speed);
@@ -39,10 +46,7 @@ void Enemy::_bind_methods() {
     ADD_PROPERTY(PropertyInfo(Variant::INT, "hit_points"), "set_hit_points", "get_hit_points");
 }
 
-void Enemy::_physics_process(double) {
-    set_velocity(Vector2());
-    move_and_slide();
-}
+void Enemy::_physics_process(double) {}
 
 bool Enemy::apply_damage(int amount) {
     if (amount <= 0 || hit_points <= 0 || is_frozen()) {
@@ -91,6 +95,39 @@ void Enemy::update_shot_cooldown(double delta) {
 
 void Enemy::update_freeze(double delta) {
     freeze_timer = std::max(0.0, freeze_timer - delta);
+}
+
+void Enemy::update_sight_memory(double delta, bool has_line_of_sight) {
+    if (has_line_of_sight) {
+        sight_memory_timer = sight_memory_duration;
+        return;
+    }
+
+    sight_memory_timer = std::max(0.0, sight_memory_timer - delta);
+}
+
+bool Enemy::has_recent_sight() const {
+    return sight_memory_timer > 0.0;
+}
+
+void Enemy::set_wander_direction(const Vector2 &direction) {
+    wander_direction = direction;
+}
+
+Vector2 Enemy::get_wander_direction() const {
+    return wander_direction;
+}
+
+void Enemy::set_wander_timer(double duration) {
+    wander_timer = std::max(0.0, duration);
+}
+
+double Enemy::get_wander_timer() const {
+    return wander_timer;
+}
+
+void Enemy::update_wander_timer(double delta) {
+    wander_timer = std::max(0.0, wander_timer - delta);
 }
 
 void Enemy::set_enemy_type(int p_enemy_type) {

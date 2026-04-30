@@ -13,6 +13,8 @@ void PlayerController::_bind_methods() {
     ClassDB::bind_method(D_METHOD("add_reserve_ammo", "amount"), &PlayerController::add_reserve_ammo);
     ClassDB::bind_method(D_METHOD("heal", "amount"), &PlayerController::heal);
     ClassDB::bind_method(D_METHOD("take_damage", "amount"), &PlayerController::take_damage);
+    ClassDB::bind_method(D_METHOD("activate_speed_boost", "duration", "multiplier"), &PlayerController::activate_speed_boost);
+    ClassDB::bind_method(D_METHOD("activate_cone_weapon", "duration"), &PlayerController::activate_cone_weapon);
     ClassDB::bind_method(D_METHOD("get_bullets_in_magazine"), &PlayerController::get_bullets_in_magazine);
     ClassDB::bind_method(D_METHOD("get_current_health"), &PlayerController::get_current_health);
     ClassDB::bind_method(D_METHOD("get_magazine_size"), &PlayerController::get_magazine_size);
@@ -21,7 +23,10 @@ void PlayerController::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_reload_duration"), &PlayerController::get_reload_duration);
     ClassDB::bind_method(D_METHOD("get_reload_progress"), &PlayerController::get_reload_progress);
     ClassDB::bind_method(D_METHOD("get_move_speed"), &PlayerController::get_move_speed);
+    ClassDB::bind_method(D_METHOD("get_speed_boost_time_remaining"), &PlayerController::get_speed_boost_time_remaining);
+    ClassDB::bind_method(D_METHOD("get_cone_weapon_time_remaining"), &PlayerController::get_cone_weapon_time_remaining);
     ClassDB::bind_method(D_METHOD("is_reloading"), &PlayerController::is_reloading);
+    ClassDB::bind_method(D_METHOD("is_cone_weapon_active"), &PlayerController::is_cone_weapon_active);
 }
 
 void PlayerController::_ready() {
@@ -40,13 +45,27 @@ void PlayerController::_physics_process(double delta) {
         direction = direction.normalized();
     }
 
-    set_velocity(direction * move_speed);
+    set_velocity(direction * get_move_speed());
     move_and_slide();
 
     if (reload_timer > 0.0) {
         reload_timer = std::max(0.0, reload_timer - delta);
         if (reload_timer == 0.0) {
             finish_reload();
+        }
+    }
+
+    if (speed_boost_timer > 0.0) {
+        speed_boost_timer = std::max(0.0, speed_boost_timer - delta);
+        if (speed_boost_timer == 0.0) {
+            speed_boost_multiplier = 1.0;
+        }
+    }
+
+    if (cone_weapon_timer > 0.0) {
+        cone_weapon_timer = std::max(0.0, cone_weapon_timer - delta);
+        if (cone_weapon_timer == 0.0) {
+            weapon_mode = WeaponMode::STANDARD;
         }
     }
 
@@ -116,6 +135,24 @@ bool PlayerController::take_damage(int amount) {
     return true;
 }
 
+void PlayerController::activate_speed_boost(double duration, double multiplier) {
+    if (duration <= 0.0 || multiplier <= 1.0) {
+        return;
+    }
+
+    speed_boost_timer = std::max(speed_boost_timer, duration);
+    speed_boost_multiplier = std::max(speed_boost_multiplier, multiplier);
+}
+
+void PlayerController::activate_cone_weapon(double duration) {
+    if (duration <= 0.0) {
+        return;
+    }
+
+    cone_weapon_timer = std::max(cone_weapon_timer, duration);
+    weapon_mode = WeaponMode::CONE;
+}
+
 int PlayerController::get_bullets_in_magazine() const {
     return bullets_in_magazine;
 }
@@ -149,9 +186,21 @@ double PlayerController::get_reload_progress() const {
 }
 
 double PlayerController::get_move_speed() const {
-    return move_speed;
+    return move_speed * speed_boost_multiplier;
+}
+
+double PlayerController::get_speed_boost_time_remaining() const {
+    return speed_boost_timer;
+}
+
+double PlayerController::get_cone_weapon_time_remaining() const {
+    return cone_weapon_timer;
 }
 
 bool PlayerController::is_reloading() const {
     return reload_timer > 0.0;
+}
+
+bool PlayerController::is_cone_weapon_active() const {
+    return weapon_mode == WeaponMode::CONE && cone_weapon_timer > 0.0;
 }

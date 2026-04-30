@@ -22,6 +22,10 @@ private:
     double freeze_duration = 3.0;
     double freeze_timer = 0.0;
     double chase_activation_range = 25.0 * 64.0;
+    double sight_memory_duration = 2.0;
+    double sight_memory_timer = 0.0;
+    double wander_timer = 0.0;
+    Vector2 wander_direction = Vector2();
     int max_hit_points = 3;
     int hit_points = 3;
 
@@ -43,6 +47,13 @@ public:
     void reset_freeze_timer();
     void update_shot_cooldown(double delta);
     void update_freeze(double delta);
+    void update_sight_memory(double delta, bool has_line_of_sight);
+    bool has_recent_sight() const;
+    void set_wander_direction(const Vector2 &direction);
+    Vector2 get_wander_direction() const;
+    void set_wander_timer(double duration);
+    double get_wander_timer() const;
+    void update_wander_timer(double delta);
 
     void set_enemy_type(int p_enemy_type);
     int get_enemy_type() const;

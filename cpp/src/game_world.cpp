@@ -1,12 +1,14 @@
 #include "game_world.h"
 
 #include <algorithm>
+#include <chrono>
 
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/geometry2d.hpp>
 #include <godot_cpp/classes/input_event.hpp>
 #include <godot_cpp/classes/input_event_key.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
+#include <godot_cpp/classes/input.hpp>
 #include <godot_cpp/classes/input_map.hpp>
 #include <godot_cpp/classes/scene_tree.hpp>
 #include <godot_cpp/classes/window.hpp>
@@ -16,6 +18,10 @@
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 
 using namespace godot;
+
+namespace {
+using Clock = std::chrono::steady_clock;
+}
 
 void GameWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("restart_game"), &GameWorld::restart_game);
@@ -57,6 +63,7 @@ void GameWorld::ensure_input_actions() {
         {"reload", Key::KEY_R},
         {"toggle_pause", Key::KEY_P},
         {"toggle_map_view", Key::KEY_M},
+        {"toggle_spatial_mode", Key::KEY_T},
         {"toggle_quadtree_overlay", Key::KEY_U},
     };
 
@@ -235,33 +242,51 @@ void GameWorld::create_enemies() {
 void GameWorld::create_pickups() {
     pickups.clear();
 
-    const int total_pickups = PICKUP_PAIR_COUNT * 2;
-    for (int i = 0; i < total_pickups; ++i) {
-        Pickup pickup;
-        pickup.type = i < PICKUP_PAIR_COUNT ? PickupType::AMMO : PickupType::HEALTH;
-        pickup.amount = pickup.type == PickupType::AMMO ? 16 : 2;
+    struct PickupSpec {
+        PickupType type;
+        int amount;
+        real_t duration;
+        real_t magnitude;
+    };
 
-        bool placed = false;
-        for (int attempt = 0; attempt < 200 && !placed; ++attempt) {
-            const real_t min_coord = real_t(PICKUP_SPAWN_MARGIN_TILES * TILE_SIZE);
-            const real_t max_x = real_t((MAP_WIDTH_TILES - PICKUP_SPAWN_MARGIN_TILES) * TILE_SIZE);
-            const real_t max_y = real_t((MAP_HEIGHT_TILES - PICKUP_SPAWN_MARGIN_TILES) * TILE_SIZE);
+    const PickupSpec pickup_specs[] = {
+        {PickupType::AMMO, 16, 0.0f, 0.0f},
+        {PickupType::HEALTH, 2, 0.0f, 0.0f},
+        {PickupType::SPEED, 0, 8.0f, 1.45f},
+        {PickupType::CONE, 0, 10.0f, 0.0f},
+    };
 
-            Vector2 position(
-                rng->randf_range(min_coord, max_x),
-                rng->randf_range(min_coord, max_y)
-            );
+    for (const PickupSpec &spec : pickup_specs) {
+        const int spawn_count = rng->randi_range(5, 20);
+        for (int i = 0; i < spawn_count; ++i) {
+            Pickup pickup;
+            pickup.type = spec.type;
+            pickup.amount = spec.amount;
+            pickup.duration = spec.duration;
+            pickup.magnitude = spec.magnitude;
 
-            if (!is_pickup_position_valid(position)) {
-                continue;
+            bool placed = false;
+            for (int attempt = 0; attempt < 200 && !placed; ++attempt) {
+                const real_t min_coord = real_t(PICKUP_SPAWN_MARGIN_TILES * TILE_SIZE);
+                const real_t max_x = real_t((MAP_WIDTH_TILES - PICKUP_SPAWN_MARGIN_TILES) * TILE_SIZE);
+                const real_t max_y = real_t((MAP_HEIGHT_TILES - PICKUP_SPAWN_MARGIN_TILES) * TILE_SIZE);
+
+                Vector2 position(
+                    rng->randf_range(min_coord, max_x),
+                    rng->randf_range(min_coord, max_y)
+                );
+
+                if (!is_pickup_position_valid(position)) {
+                    continue;
+                }
+
+                pickup.position = position;
+                placed = true;
             }
 
-            pickup.position = position;
-            placed = true;
-        }
-
-        if (placed) {
-            pickups.push_back(pickup);
+            if (placed) {
+                pickups.push_back(pickup);
+            }
         }
     }
 }
@@ -313,13 +338,26 @@ void GameWorld::_process(double delta) {
     }
 
     clamp_player_to_map();
+    player_cone_fire_cooldown_timer = std::max(0.0, player_cone_fire_cooldown_timer - delta);
     update_bullets(delta);
     update_enemies(delta);
     update_enemy_waves(delta);
     update_fire_hazards(delta);
+    update_player_flame_bursts(delta);
     update_pickups();
+
+    Input *input = Input::get_singleton();
+    if (input != nullptr && player != nullptr && player->is_cone_weapon_active() && input->is_action_pressed("shoot") && player_cone_fire_cooldown_timer <= 0.0) {
+        const Vector2 target = get_global_mouse_position();
+        if (player->try_shoot(target)) {
+            fire_player_weapon(target);
+            player_cone_fire_cooldown_timer = 0.08;
+        }
+    }
+
     rebuild_spatial_index();
     check_game_over();
+    finalize_spatial_stats();
     update_hud();
     queue_redraw();
 }
@@ -371,6 +409,20 @@ void GameWorld::update_hud() {
     hud_text += expanded_map_view ? "40x40" : "10x10";
     hud_text += " tiles  Toggle Map View: M";
     hud_text += "\nPause: P";
+    hud_text += "  Spatial Mode: ";
+    hud_text += use_quadtree_spatial_index ? "QuadTree (T)" : "Brute Force (T)";
+    hud_text += "\nWeapon: ";
+    hud_text += player->is_cone_weapon_active() ? "Cone Arc" : "Standard";
+    if (player->is_cone_weapon_active()) {
+        hud_text += " ";
+        hud_text += String::num(player->get_cone_weapon_time_remaining(), 1);
+        hud_text += "s";
+    }
+    if (player->get_speed_boost_time_remaining() > 0.0) {
+        hud_text += "  Speed Boost ";
+        hud_text += String::num(player->get_speed_boost_time_remaining(), 1);
+        hud_text += "s";
+    }
     hud_text += "\nEnemies: ";
     hud_text += String::num_int64(static_cast<int64_t>(enemies.size()));
     hud_text += "  Barrels: ";
@@ -379,12 +431,60 @@ void GameWorld::update_hud() {
         oil_barrels.end(),
         [](const OilBarrel &barrel) { return !barrel.exploded; }
     )));
+    int ammo_pickup_count = 0;
+    int health_pickup_count = 0;
+    int speed_pickup_count = 0;
+    int cone_pickup_count = 0;
+    for (const Pickup &pickup : pickups) {
+        if (pickup.collected) {
+            continue;
+        }
+
+        switch (pickup.type) {
+            case PickupType::AMMO:
+                ammo_pickup_count += 1;
+                break;
+            case PickupType::HEALTH:
+                health_pickup_count += 1;
+                break;
+            case PickupType::SPEED:
+                speed_pickup_count += 1;
+                break;
+            case PickupType::CONE:
+                cone_pickup_count += 1;
+                break;
+        }
+    }
+    hud_text += "\nPickups: Ammo ";
+    hud_text += String::num_int64(ammo_pickup_count);
+    hud_text += "  Health ";
+    hud_text += String::num_int64(health_pickup_count);
+    hud_text += "  Speed ";
+    hud_text += String::num_int64(speed_pickup_count);
+    hud_text += "  Cone ";
+    hud_text += String::num_int64(cone_pickup_count);
     hud_text += "\nQuadtree: ";
-    hud_text += String::num_int64(static_cast<int64_t>(quadtree_debug_bounds.size()));
-    hud_text += " nodes  Candidates: ";
+    hud_text += use_quadtree_spatial_index
+        ? String::num_int64(static_cast<int64_t>(quadtree_debug_bounds.size()))
+        : String("Bypassed");
+    hud_text += "  Candidates: ";
     hud_text += String::num_int64(quadtree_last_candidate_count);
     hud_text += "  Overlay: ";
     hud_text += quadtree_overlay_visible ? "On (U)" : "Off (U)";
+    hud_text += "\nSpatial Stats: Build ";
+    hud_text += String::num(spatial_index_time_ms, 3);
+    hud_text += " ms  Query ";
+    hud_text += String::num(spatial_query_time_ms, 3);
+    hud_text += " ms  Calls ";
+    hud_text += String::num_int64(spatial_query_count);
+    hud_text += "  Checks ";
+    hud_text += String::num_int64(spatial_item_test_count);
+    hud_text += "\nSpatial Avg: Build ";
+    hud_text += String::num(smoothed_spatial_index_time_ms, 3);
+    hud_text += " ms  Query ";
+    hud_text += String::num(smoothed_spatial_query_time_ms, 3);
+    hud_text += " ms  Checks ";
+    hud_text += String::num_int64(smoothed_spatial_item_test_count);
     if (player->is_reloading()) {
         hud_text += "\nReloading...";
     }
@@ -527,6 +627,19 @@ void GameWorld::update_enemies(double delta) {
 
         enemy->update_freeze(delta);
         enemy->update_shot_cooldown(delta);
+        enemy->update_wander_timer(delta);
+
+        const Vector2 to_player = player->get_position() - enemy->get_position();
+        const real_t distance_to_player = to_player.length();
+        const bool in_detection_range = distance_to_player <= enemy->get_chase_activation_range();
+        const bool has_line_of_sight = in_detection_range && !segment_hits_structure(enemy->get_position(), player->get_position());
+        enemy->update_sight_memory(delta, has_line_of_sight);
+
+        if (enemy->get_wander_timer() <= 0.0 && !enemy->has_recent_sight()) {
+            const real_t random_angle = rng->randf_range(0.0f, Math_TAU);
+            enemy->set_wander_direction(Vector2(Math::cos(random_angle), Math::sin(random_angle)));
+            enemy->set_wander_timer(rng->randf_range(0.8f, 2.2f));
+        }
 
         if (enemy->is_chaser()) {
             if (enemy->is_frozen()) {
@@ -535,11 +648,10 @@ void GameWorld::update_enemies(double delta) {
                 continue;
             }
 
-            const Vector2 offset_to_player = player->get_position() - enemy->get_position();
-            if (offset_to_player.length() <= enemy->get_chase_activation_range()) {
-                enemy->set_velocity(offset_to_player.normalized() * enemy->get_move_speed());
+            if (enemy->has_recent_sight() && distance_to_player > 0.0f) {
+                enemy->set_velocity(to_player.normalized() * enemy->get_move_speed());
             } else {
-                enemy->set_velocity(Vector2());
+                enemy->set_velocity(enemy->get_wander_direction() * (enemy->get_move_speed() * 0.45));
             }
             enemy->move_and_slide();
             enemy->set_position(resolve_character_position(enemy->get_position(), 24.0f));
@@ -553,7 +665,20 @@ void GameWorld::update_enemies(double delta) {
             continue;
         }
 
-        if (!enemy->can_fire()) {
+        Vector2 shooter_velocity;
+        if (enemy->has_recent_sight() && distance_to_player > 0.0f) {
+            const real_t preferred_distance = 9.0f * TILE_SIZE;
+            if (distance_to_player > preferred_distance) {
+                shooter_velocity = to_player.normalized() * (enemy->get_move_speed() * 0.65);
+            }
+        } else {
+            shooter_velocity = enemy->get_wander_direction() * (enemy->get_move_speed() * 0.4);
+        }
+        enemy->set_velocity(shooter_velocity);
+        enemy->move_and_slide();
+        enemy->set_position(resolve_character_position(enemy->get_position(), 24.0f));
+
+        if (!has_line_of_sight || !enemy->can_fire()) {
             continue;
         }
 
@@ -693,6 +818,12 @@ void GameWorld::update_pickups() {
             consumed = player->add_reserve_ammo(pickup.amount);
         } else if (pickup.type == PickupType::HEALTH) {
             consumed = player->heal(pickup.amount);
+        } else if (pickup.type == PickupType::SPEED) {
+            player->activate_speed_boost(pickup.duration, pickup.magnitude);
+            consumed = true;
+        } else if (pickup.type == PickupType::CONE) {
+            player->activate_cone_weapon(pickup.duration);
+            consumed = true;
         }
 
         if (consumed) {
@@ -723,6 +854,10 @@ void GameWorld::clear_quadtree_debug() {
     quadtree_debug_visited.clear();
     quadtree_debug_candidates.clear();
     quadtree_last_candidate_count = 0;
+    spatial_query_count = 0;
+    spatial_item_test_count = 0;
+    spatial_index_time_ms = 0.0;
+    spatial_query_time_ms = 0.0;
 }
 
 void GameWorld::collect_spatial_items() {
@@ -778,6 +913,41 @@ void GameWorld::collect_spatial_items() {
         item.position = barrel.position;
         item.radius = 24.0f;
         spatial_items.push_back(item);
+    }
+}
+
+void GameWorld::update_player_flame_bursts(double delta) {
+    for (PlayerFlameBurst &burst : player_flame_bursts) {
+        burst.elapsed_time += real_t(delta);
+    }
+
+    player_flame_bursts.erase(
+        std::remove_if(
+            player_flame_bursts.begin(),
+            player_flame_bursts.end(),
+            [](const PlayerFlameBurst &burst) {
+                return burst.elapsed_time >= burst.lifetime;
+            }
+        ),
+        player_flame_bursts.end()
+    );
+}
+
+void GameWorld::collect_enemy_rtree_items() {
+    enemy_rtree_items.clear();
+
+    for (size_t i = 0; i < enemies.size(); ++i) {
+        Enemy *enemy = enemies[i];
+        if (enemy == nullptr || enemy->get_hit_points() <= 0) {
+            continue;
+        }
+
+        const real_t radius = enemy->is_chaser() ? 28.0f : 24.0f;
+        EnemyRTreeItem item;
+        item.enemy_index = static_cast<int>(i);
+        item.position = enemy->get_position();
+        item.bounds = Rect2(item.position - Vector2(radius, radius), Vector2(radius * 2.0f, radius * 2.0f));
+        enemy_rtree_items.push_back(item);
     }
 }
 
@@ -846,7 +1016,16 @@ void GameWorld::insert_spatial_item(QuadtreeNode &node, int item_index) {
 }
 
 void GameWorld::rebuild_spatial_index() {
+    const auto start_time = Clock::now();
     collect_spatial_items();
+    rebuild_enemy_rtree();
+
+    if (!use_quadtree_spatial_index) {
+        quadtree_root = QuadtreeNode();
+        quadtree_ready = false;
+        spatial_index_time_ms += std::chrono::duration<double, std::milli>(Clock::now() - start_time).count();
+        return;
+    }
 
     quadtree_root = QuadtreeNode();
     quadtree_root.bounds = Rect2(Vector2(), Vector2(real_t(MAP_WIDTH_TILES * TILE_SIZE), real_t(MAP_HEIGHT_TILES * TILE_SIZE)));
@@ -868,16 +1047,59 @@ void GameWorld::rebuild_spatial_index() {
             pending_nodes.push_back(&child);
         }
     }
+
+    spatial_index_time_ms += std::chrono::duration<double, std::milli>(Clock::now() - start_time).count();
 }
 
-void GameWorld::query_spatial_items(const Rect2 &area, std::vector<int> &out_indices, bool record_debug) {
-    out_indices.clear();
-    if (!quadtree_ready) {
+void GameWorld::rebuild_enemy_rtree() {
+    collect_enemy_rtree_items();
+    enemy_rtree_root = EnemyRTreeNode();
+    enemy_rtree_ready = !enemy_rtree_items.empty();
+    if (!enemy_rtree_ready) {
         return;
     }
 
+    std::vector<int> item_indices;
+    item_indices.reserve(enemy_rtree_items.size());
+    for (size_t i = 0; i < enemy_rtree_items.size(); ++i) {
+        item_indices.push_back(static_cast<int>(i));
+    }
+
+    enemy_rtree_root = build_enemy_rtree_node(std::move(item_indices));
+}
+
+void GameWorld::query_spatial_items(const Rect2 &area, std::vector<int> &out_indices, bool record_debug) {
+    const auto start_time = Clock::now();
+    out_indices.clear();
+    spatial_query_count += 1;
+
     if (record_debug) {
         quadtree_debug_queries.push_back(area);
+    }
+
+    if (!use_quadtree_spatial_index) {
+        for (size_t i = 0; i < spatial_items.size(); ++i) {
+            const SpatialItem &item = spatial_items[i];
+            const Rect2 item_bounds(item.position - Vector2(item.radius, item.radius), Vector2(item.radius * 2.0f, item.radius * 2.0f));
+            spatial_item_test_count += 1;
+            if (area.intersects(item_bounds)) {
+                out_indices.push_back(static_cast<int>(i));
+            }
+        }
+
+        if (record_debug) {
+            quadtree_last_candidate_count += static_cast<int>(out_indices.size());
+            for (int item_index : out_indices) {
+                quadtree_debug_candidates.push_back(spatial_items[item_index].position);
+            }
+        }
+        spatial_query_time_ms += std::chrono::duration<double, std::milli>(Clock::now() - start_time).count();
+        return;
+    }
+
+    if (!quadtree_ready) {
+        spatial_query_time_ms += std::chrono::duration<double, std::milli>(Clock::now() - start_time).count();
+        return;
     }
 
     query_quadtree_node(quadtree_root, area, out_indices, record_debug);
@@ -887,6 +1109,8 @@ void GameWorld::query_spatial_items(const Rect2 &area, std::vector<int> &out_ind
             quadtree_debug_candidates.push_back(spatial_items[item_index].position);
         }
     }
+
+    spatial_query_time_ms += std::chrono::duration<double, std::milli>(Clock::now() - start_time).count();
 }
 
 void GameWorld::query_quadtree_node(const QuadtreeNode &node, const Rect2 &area, std::vector<int> &out_indices, bool record_debug) const {
@@ -901,6 +1125,7 @@ void GameWorld::query_quadtree_node(const QuadtreeNode &node, const Rect2 &area,
     for (int item_index : node.item_indices) {
         const SpatialItem &item = spatial_items[item_index];
         const Rect2 item_bounds(item.position - Vector2(item.radius, item.radius), Vector2(item.radius * 2.0f, item.radius * 2.0f));
+        const_cast<GameWorld *>(this)->spatial_item_test_count += 1;
         if (area.intersects(item_bounds)) {
             out_indices.push_back(item_index);
         }
@@ -909,6 +1134,79 @@ void GameWorld::query_quadtree_node(const QuadtreeNode &node, const Rect2 &area,
     for (const QuadtreeNode &child : node.children) {
         query_quadtree_node(child, area, out_indices, record_debug);
     }
+}
+
+GameWorld::EnemyRTreeNode GameWorld::build_enemy_rtree_node(std::vector<int> item_indices) const {
+    EnemyRTreeNode node;
+    if (item_indices.empty()) {
+        return node;
+    }
+
+    Rect2 merged_bounds = enemy_rtree_items[item_indices.front()].bounds;
+    for (int item_index : item_indices) {
+        merged_bounds = merged_bounds.merge(enemy_rtree_items[item_index].bounds);
+    }
+    node.bounds = merged_bounds;
+
+    if (item_indices.size() <= RTREE_NODE_CAPACITY) {
+        node.leaf = true;
+        node.item_indices = std::move(item_indices);
+        return node;
+    }
+
+    node.leaf = false;
+    const bool sort_by_x = merged_bounds.size.x >= merged_bounds.size.y;
+    std::sort(
+        item_indices.begin(),
+        item_indices.end(),
+        [this, sort_by_x](int lhs, int rhs) {
+            const Vector2 left_center = enemy_rtree_items[lhs].bounds.get_center();
+            const Vector2 right_center = enemy_rtree_items[rhs].bounds.get_center();
+            return sort_by_x ? left_center.x < right_center.x : left_center.y < right_center.y;
+        }
+    );
+
+    const size_t chunk_size = static_cast<size_t>(RTREE_NODE_CAPACITY);
+    for (size_t start = 0; start < item_indices.size(); start += chunk_size) {
+        const size_t end = std::min(item_indices.size(), start + chunk_size);
+        std::vector<int> child_items(item_indices.begin() + start, item_indices.begin() + end);
+        node.children.push_back(build_enemy_rtree_node(std::move(child_items)));
+    }
+
+    return node;
+}
+
+void GameWorld::query_enemy_rtree(const EnemyRTreeNode &node, const Rect2 &area, std::vector<int> &out_enemy_indices) const {
+    if (!node.bounds.intersects(area)) {
+        return;
+    }
+
+    if (node.leaf) {
+        for (int item_index : node.item_indices) {
+            if (item_index < 0 || item_index >= static_cast<int>(enemy_rtree_items.size())) {
+                continue;
+            }
+
+            const EnemyRTreeItem &item = enemy_rtree_items[item_index];
+            if (area.intersects(item.bounds)) {
+                out_enemy_indices.push_back(item.enemy_index);
+            }
+        }
+        return;
+    }
+
+    for (const EnemyRTreeNode &child : node.children) {
+        query_enemy_rtree(child, area, out_enemy_indices);
+    }
+}
+
+void GameWorld::finalize_spatial_stats() {
+    constexpr double smoothing = 0.15;
+    smoothed_spatial_index_time_ms = (smoothed_spatial_index_time_ms * (1.0 - smoothing)) + (spatial_index_time_ms * smoothing);
+    smoothed_spatial_query_time_ms = (smoothed_spatial_query_time_ms * (1.0 - smoothing)) + (spatial_query_time_ms * smoothing);
+    smoothed_spatial_item_test_count = static_cast<int>(
+        Math::round((static_cast<double>(smoothed_spatial_item_test_count) * (1.0 - smoothing)) + (static_cast<double>(spatial_item_test_count) * smoothing))
+    );
 }
 
 bool GameWorld::is_enemy_position_valid(const Vector2 &position) const {
@@ -1129,6 +1427,117 @@ PackedVector2Array GameWorld::build_fire_shape_points(const Vector2 &center, rea
     return points;
 }
 
+void GameWorld::fire_player_weapon(const Vector2 &target) {
+    if (player == nullptr) {
+        return;
+    }
+
+    if (player->is_cone_weapon_active()) {
+        fire_player_cone_weapon(target);
+        return;
+    }
+
+    Bullet bullet;
+    bullet.position = player->get_position();
+    bullet.velocity = (target - player->get_position()).normalized() * 700.0f;
+    bullets.push_back(bullet);
+}
+
+void GameWorld::fire_player_cone_weapon(const Vector2 &target) {
+    if (player == nullptr) {
+        return;
+    }
+
+    const Vector2 origin = player->get_position();
+    Vector2 direction = target - origin;
+    if (direction.length_squared() == 0.0f) {
+        return;
+    }
+    direction = direction.normalized();
+
+    const real_t cone_range = 260.0f;
+    const real_t cone_half_angle = 0.48f;
+    const real_t min_dot = Math::cos(cone_half_angle);
+    const Rect2 query_area(origin - Vector2(cone_range, cone_range), Vector2(cone_range * 2.0f, cone_range * 2.0f));
+
+    PlayerFlameBurst burst;
+    burst.origin = origin;
+    burst.direction = direction;
+    burst.range = cone_range;
+    burst.half_angle = cone_half_angle;
+    burst.lifetime = 0.16f;
+    player_flame_bursts.push_back(burst);
+
+    std::vector<int> candidate_enemy_indices;
+    if (enemy_rtree_ready) {
+        query_enemy_rtree(enemy_rtree_root, query_area, candidate_enemy_indices);
+    } else {
+        for (size_t i = 0; i < enemies.size(); ++i) {
+            candidate_enemy_indices.push_back(static_cast<int>(i));
+        }
+    }
+
+    std::vector<bool> enemy_destroyed(enemies.size(), false);
+    for (int enemy_index : candidate_enemy_indices) {
+        if (enemy_index < 0 || enemy_index >= static_cast<int>(enemies.size())) {
+            continue;
+        }
+
+        Enemy *enemy = enemies[enemy_index];
+        if (enemy == nullptr || enemy->get_hit_points() <= 0) {
+            continue;
+        }
+
+        const Vector2 to_enemy = enemy->get_position() - origin;
+        const real_t distance = to_enemy.length();
+        if (distance <= 0.0f || distance > cone_range) {
+            continue;
+        }
+
+        const real_t alignment = direction.dot(to_enemy / distance);
+        if (alignment < min_dot || segment_hits_structure(origin, enemy->get_position())) {
+            continue;
+        }
+
+        if (enemy->apply_environment_damage(2) && enemy->get_hit_points() <= 0) {
+            enemy_destroyed[enemy_index] = true;
+        }
+    }
+
+    for (OilBarrel &barrel : oil_barrels) {
+        if (barrel.exploded) {
+            continue;
+        }
+
+        const Vector2 to_barrel = barrel.position - origin;
+        const real_t distance = to_barrel.length();
+        if (distance <= 0.0f || distance > cone_range) {
+            continue;
+        }
+
+        const real_t alignment = direction.dot(to_barrel / distance);
+        if (alignment < min_dot || segment_hits_structure(origin, barrel.position)) {
+            continue;
+        }
+
+        barrel.exploded = true;
+        FireHazard fire;
+        fire.position = barrel.position;
+        fire.radius = rng->randf_range(2.5f, 3.5f) * real_t(TILE_SIZE);
+        fire.shape_seed = rng->randf_range(0.0f, 1000.0f);
+        fire_hazards.push_back(fire);
+    }
+
+    for (int i = static_cast<int>(enemies.size()) - 1; i >= 0; --i) {
+        if (!enemy_destroyed[i]) {
+            continue;
+        }
+
+        enemies[i]->queue_free();
+        enemies.erase(enemies.begin() + i);
+    }
+}
+
 void GameWorld::_draw() {
     const int map_pixel_width = MAP_WIDTH_TILES * TILE_SIZE;
     const int map_pixel_height = MAP_HEIGHT_TILES * TILE_SIZE;
@@ -1139,6 +1548,8 @@ void GameWorld::_draw() {
     const Color enemy_wave_color(1.0f, 0.45f, 0.78f);
     const Color ammo_pickup_color(0.36f, 0.79f, 1.0f);
     const Color health_pickup_color(1.0f, 0.37f, 0.37f);
+    const Color speed_pickup_color(0.98f, 0.83f, 0.25f);
+    const Color cone_pickup_color(0.73f, 0.48f, 1.0f);
     const Color compass_color(1.0f, 1.0f, 1.0f);
     const Color oil_barrel_color(0.72f, 0.12f, 0.08f);
     const Color quadtree_color(0.42f, 0.86f, 1.0f, 0.18f);
@@ -1202,6 +1613,29 @@ void GameWorld::_draw() {
             draw_arc(center, radius, start_angle, end_angle, point_count, Color(1.0f, 1.0f, 1.0f), 5.0f, true);
         }
 
+        if (player->is_cone_weapon_active()) {
+            const Vector2 center = player->get_position();
+            Vector2 aim_direction = get_global_mouse_position() - center;
+            if (aim_direction.length_squared() > 0.0f) {
+                aim_direction = aim_direction.normalized();
+                const real_t cone_range = 260.0f;
+                const real_t cone_half_angle = 0.48f;
+                const real_t center_angle = aim_direction.angle();
+                const real_t start_angle = center_angle - cone_half_angle;
+                const real_t end_angle = center_angle + cone_half_angle;
+                draw_arc(center, cone_range, start_angle, end_angle, 36, Color(0.8f, 0.62f, 1.0f, 0.8f), 4.0f, true);
+
+                PackedVector2Array cone_fill;
+                cone_fill.push_back(center);
+                for (int i = 0; i <= 18; ++i) {
+                    const real_t t = real_t(i) / 18.0f;
+                    const real_t angle = start_angle + ((end_angle - start_angle) * t);
+                    cone_fill.push_back(center + Vector2(Math::cos(angle), Math::sin(angle)) * cone_range);
+                }
+                draw_colored_polygon(cone_fill, Color(0.8f, 0.62f, 1.0f, 0.08f));
+            }
+        }
+
         const Pickup *nearest_pickup = find_nearest_pickup_in_range(real_t(PICKUP_COMPASS_RANGE_TILES * TILE_SIZE));
         if (nearest_pickup != nullptr) {
             const Vector2 direction = (nearest_pickup->position - player->get_position()).normalized();
@@ -1221,6 +1655,32 @@ void GameWorld::_draw() {
 
     for (const Bullet &bullet : bullets) {
         draw_circle(bullet.position, 5.0f, bullet_color);
+    }
+
+    for (const PlayerFlameBurst &burst : player_flame_bursts) {
+        const real_t fade = 1.0f - (burst.elapsed_time / burst.lifetime);
+        const real_t center_angle = burst.direction.angle();
+        const real_t start_angle = center_angle - burst.half_angle;
+        const real_t end_angle = center_angle + burst.half_angle;
+
+        PackedVector2Array outer_flame;
+        PackedVector2Array inner_flame;
+        outer_flame.push_back(burst.origin);
+        inner_flame.push_back(burst.origin);
+        for (int i = 0; i <= 18; ++i) {
+            const real_t t = real_t(i) / 18.0f;
+            const real_t angle = start_angle + ((end_angle - start_angle) * t);
+            const real_t wave = 0.86f + (0.14f * Math::sin((t * 11.0f) + (burst.elapsed_time * 18.0f)));
+            const real_t outer_range = burst.range * wave;
+            const real_t inner_range = burst.range * 0.62f * wave;
+            const Vector2 dir(Math::cos(angle), Math::sin(angle));
+            outer_flame.push_back(burst.origin + dir * outer_range);
+            inner_flame.push_back(burst.origin + dir * inner_range);
+        }
+
+        draw_colored_polygon(outer_flame, Color(1.0f, 0.36f, 0.08f, 0.20f * fade));
+        draw_colored_polygon(inner_flame, Color(1.0f, 0.82f, 0.26f, 0.34f * fade));
+        draw_arc(burst.origin, burst.range * (0.95f + (0.05f * fade)), start_angle, end_angle, 28, Color(1.0f, 0.76f, 0.2f, 0.55f * fade), 5.0f, true);
     }
 
     if (quadtree_overlay_visible) {
@@ -1319,16 +1779,44 @@ void GameWorld::_draw() {
             continue;
         }
 
-        const Color pickup_color = pickup.type == PickupType::AMMO ? ammo_pickup_color : health_pickup_color;
+        Color pickup_color = ammo_pickup_color;
+        switch (pickup.type) {
+            case PickupType::AMMO:
+                pickup_color = ammo_pickup_color;
+                break;
+            case PickupType::HEALTH:
+                pickup_color = health_pickup_color;
+                break;
+            case PickupType::SPEED:
+                pickup_color = speed_pickup_color;
+                break;
+            case PickupType::CONE:
+                pickup_color = cone_pickup_color;
+                break;
+        }
         draw_circle(pickup.position, 14.0f, pickup_color);
         draw_circle(pickup.position, 18.0f, Color(pickup_color.r, pickup_color.g, pickup_color.b, 0.18f));
 
         if (pickup.type == PickupType::AMMO) {
             draw_rect(Rect2(pickup.position - Vector2(8.0f, 4.0f), Vector2(16.0f, 8.0f)), Color(1.0f, 1.0f, 1.0f), true);
             draw_line(pickup.position + Vector2(0.0f, -7.0f), pickup.position + Vector2(0.0f, 7.0f), pickup_color, 2.0f);
-        } else {
+        } else if (pickup.type == PickupType::HEALTH) {
             draw_rect(Rect2(pickup.position - Vector2(3.0f, 9.0f), Vector2(6.0f, 18.0f)), Color(1.0f, 1.0f, 1.0f), true);
             draw_rect(Rect2(pickup.position - Vector2(9.0f, 3.0f), Vector2(18.0f, 6.0f)), Color(1.0f, 1.0f, 1.0f), true);
+        } else if (pickup.type == PickupType::SPEED) {
+            draw_arc(pickup.position, 9.0f, -Math_PI * 0.35f, Math_PI * 0.9f, 20, Color(1.0f, 1.0f, 1.0f), 3.0f, true);
+            PackedVector2Array bolt;
+            bolt.push_back(pickup.position + Vector2(-2.0f, -10.0f));
+            bolt.push_back(pickup.position + Vector2(5.0f, -3.0f));
+            bolt.push_back(pickup.position + Vector2(0.0f, -2.0f));
+            bolt.push_back(pickup.position + Vector2(6.0f, 9.0f));
+            bolt.push_back(pickup.position + Vector2(-6.0f, 2.0f));
+            bolt.push_back(pickup.position + Vector2(-1.0f, 1.0f));
+            draw_colored_polygon(bolt, Color(1.0f, 1.0f, 1.0f));
+        } else if (pickup.type == PickupType::CONE) {
+            draw_arc(pickup.position, 11.0f, -0.5f, 0.5f, 20, Color(1.0f, 1.0f, 1.0f), 4.0f, true);
+            draw_arc(pickup.position, 6.0f, -0.5f, 0.5f, 20, Color(1.0f, 1.0f, 1.0f), 3.0f, true);
+            draw_line(pickup.position + Vector2(-8.0f, 0.0f), pickup.position + Vector2(-2.0f, 0.0f), Color(1.0f, 1.0f, 1.0f), 3.0f);
         }
     }
 }
@@ -1353,6 +1841,15 @@ void GameWorld::_unhandled_input(const Ref<InputEvent> &event) {
         return;
     }
 
+    if (event.is_valid() && event->is_action_pressed("toggle_spatial_mode")) {
+        use_quadtree_spatial_index = !use_quadtree_spatial_index;
+        clear_quadtree_debug();
+        rebuild_spatial_index();
+        update_hud();
+        queue_redraw();
+        return;
+    }
+
     if (game_over || gameplay_paused) {
         return;
     }
@@ -1368,10 +1865,10 @@ void GameWorld::_unhandled_input(const Ref<InputEvent> &event) {
     if (mouse_button.is_valid() && mouse_button->is_pressed() && mouse_button->get_button_index() == MouseButton::MOUSE_BUTTON_LEFT) {
         Vector2 target = get_global_mouse_position();
         if (player->try_shoot(target)) {
-            Bullet bullet;
-            bullet.position = player->get_position();
-            bullet.velocity = (target - player->get_position()).normalized() * 700.0f;
-            bullets.push_back(bullet);
+            fire_player_weapon(target);
+            if (player->is_cone_weapon_active()) {
+                player_cone_fire_cooldown_timer = 0.08;
+            }
         }
     }
 }

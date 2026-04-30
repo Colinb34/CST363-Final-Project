@@ -5,6 +5,7 @@
 #include "player_controller.h"
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include <godot_cpp/classes/canvas_layer.hpp>
@@ -30,7 +31,9 @@ private:
     static constexpr int MAP_HEIGHT_TILES = 80;
     static constexpr int TILE_SIZE = 64;
     static constexpr int PICKUP_PAIR_COUNT = 6;
-    static constexpr int PICKUP_MIN_SPACING_TILES = 25;
+    static constexpr int SPEED_PICKUP_COUNT = 4;
+    static constexpr int CONE_PICKUP_COUNT = 3;
+    static constexpr int PICKUP_MIN_SPACING_TILES = 6;
     static constexpr int PICKUP_COMPASS_RANGE_TILES = 15;
     static constexpr int PICKUP_SPAWN_MARGIN_TILES = 3;
     static constexpr int PICKUP_PLAYER_BUFFER_TILES = 8;
@@ -39,6 +42,7 @@ private:
     static constexpr int OIL_BARREL_COUNT = 7;
     static constexpr int QUADTREE_NODE_CAPACITY = 6;
     static constexpr int QUADTREE_MAX_DEPTH = 5;
+    static constexpr int RTREE_NODE_CAPACITY = 4;
 
     struct Bullet {
         Vector2 position;
@@ -54,13 +58,17 @@ private:
 
     enum class PickupType {
         AMMO,
-        HEALTH
+        HEALTH,
+        SPEED,
+        CONE
     };
 
     struct Pickup {
         PickupType type;
         Vector2 position;
         int amount = 0;
+        real_t duration = 0.0;
+        real_t magnitude = 0.0;
         bool collected = false;
     };
 
@@ -75,6 +83,15 @@ private:
         real_t elapsed_time = 0.0;
         real_t shape_seed = 0.0;
         real_t damage_tick_timer = 0.0;
+    };
+
+    struct PlayerFlameBurst {
+        Vector2 origin;
+        Vector2 direction;
+        real_t range = 0.0;
+        real_t half_angle = 0.0;
+        real_t elapsed_time = 0.0;
+        real_t lifetime = 0.0;
     };
 
     struct Structure {
@@ -105,6 +122,19 @@ private:
         std::vector<QuadtreeNode> children;
     };
 
+    struct EnemyRTreeItem {
+        Rect2 bounds;
+        Vector2 position;
+        int enemy_index = -1;
+    };
+
+    struct EnemyRTreeNode {
+        Rect2 bounds;
+        bool leaf = true;
+        std::vector<int> item_indices;
+        std::vector<EnemyRTreeNode> children;
+    };
+
     PlayerController *player = nullptr;
     Camera2D *camera = nullptr;
     CanvasLayer *hud_layer = nullptr;
@@ -115,6 +145,7 @@ private:
     bool gameplay_paused = false;
     bool map_view_before_pause = false;
     bool expanded_map_view = false;
+    bool use_quadtree_spatial_index = true;
     bool quadtree_overlay_visible = true;
     bool quadtree_ready = false;
     int quadtree_last_candidate_count = 0;
@@ -124,12 +155,24 @@ private:
     std::vector<Pickup> pickups;
     std::vector<OilBarrel> oil_barrels;
     std::vector<FireHazard> fire_hazards;
+    std::vector<PlayerFlameBurst> player_flame_bursts;
     std::vector<Structure> structures;
     std::vector<SpatialItem> spatial_items;
     std::vector<Rect2> quadtree_debug_bounds;
     std::vector<Rect2> quadtree_debug_queries;
     std::vector<Rect2> quadtree_debug_visited;
     std::vector<Vector2> quadtree_debug_candidates;
+    std::vector<EnemyRTreeItem> enemy_rtree_items;
+    EnemyRTreeNode enemy_rtree_root;
+    bool enemy_rtree_ready = false;
+    double player_cone_fire_cooldown_timer = 0.0;
+    int spatial_query_count = 0;
+    int spatial_item_test_count = 0;
+    double spatial_index_time_ms = 0.0;
+    double spatial_query_time_ms = 0.0;
+    double smoothed_spatial_index_time_ms = 0.0;
+    double smoothed_spatial_query_time_ms = 0.0;
+    int smoothed_spatial_item_test_count = 0;
     QuadtreeNode quadtree_root;
 
     void create_player();
@@ -151,15 +194,23 @@ private:
     void update_enemies(double delta);
     void update_enemy_waves(double delta);
     void update_fire_hazards(double delta);
+    void update_player_flame_bursts(double delta);
     void update_pickups();
     String build_health_pips() const;
     void rebuild_spatial_index();
+    void rebuild_enemy_rtree();
     void clear_quadtree_debug();
     void collect_spatial_items();
+    void collect_enemy_rtree_items();
     void insert_spatial_item(QuadtreeNode &node, int item_index);
     void subdivide_quadtree_node(QuadtreeNode &node);
     void query_spatial_items(const Rect2 &area, std::vector<int> &out_indices, bool record_debug = false);
     void query_quadtree_node(const QuadtreeNode &node, const Rect2 &area, std::vector<int> &out_indices, bool record_debug) const;
+    EnemyRTreeNode build_enemy_rtree_node(std::vector<int> item_indices) const;
+    void query_enemy_rtree(const EnemyRTreeNode &node, const Rect2 &area, std::vector<int> &out_enemy_indices) const;
+    void fire_player_weapon(const Vector2 &target);
+    void fire_player_cone_weapon(const Vector2 &target);
+    void finalize_spatial_stats();
     bool is_enemy_position_valid(const Vector2 &position) const;
     bool is_barrel_position_valid(const Vector2 &position) const;
     bool is_pickup_position_valid(const Vector2 &position) const;
