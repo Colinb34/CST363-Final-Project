@@ -1,44 +1,85 @@
-# CST363-Final-Project
+# 2 MIAMI 2 HEAT
 
-Simple 2D top-down shooter written in Godot 4 with a C++ GDExtension, built to demonstrate gameplay systems plus quadtree-based spatial partitioning.
+Godot 4 top-down shooter for `CST363` built with a C++ `GDExtension`. The current version focuses on spatial indexing, enemy perception, pickups, and vector-database-style nearest-candidate querying inside a playable shooter.
 
-## Included
+## Overview
 
-- `project.godot` configured for a `640x640` viewport so the player sees a `10x10` tile area by default.
-- `scenes/main.tscn` that boots a C++ `GameWorld`.
-- `cpp/src/player_controller.*` with 8-round magazine logic, reserve ammo, `R` reload, health, and 8-direction movement.
-- `cpp/src/game_world.*` with the `80x80` tile map, HUD, pickups, oil barrels, enemy waves, blue chasers, quadtree debug overlay, and game-over flow.
-- `cpp/src/enemy.*` with shared enemy state and damage handling.
-- `scripts/setup_dependencies.bat` to fetch `godot-cpp`.
-- `scripts/build_windows_debug.bat` to build the Windows debug DLL once prerequisites are installed.
+- `project.godot` starts the game at `1280x720`
+- `scenes/main.tscn` boots the native `GameWorld`
+- `cpp/src/game_world.*` contains the map, HUD, pickups, spatial queries, cone weapon logic, pause/map view, and drawing
+- `cpp/src/player_controller.*` contains movement, ammo, reload, health, temporary buffs, and weapon state
+- `cpp/src/enemy.*` contains enemy movement, sight-memory, wandering, and combat state
+
+## Current Features
+
+- `80 x 80` tile map with obstacles that block movement, bullets, vision, and cone attacks
+- Two enemy types:
+  - red ranged shooters
+  - blue chasers
+- Enemy sight-line behavior:
+  - enemies wander when they do not see the player
+  - enemies chase or engage when they gain line of sight
+- Oil barrels that explode into fire hazards
+- Four pickup types:
+  - ammo
+  - health
+  - speed boost
+  - temporary cone/flamethrower weapon
+- Two spatial query modes:
+  - `QuadTree`
+  - `Brute Force`
+- Additional enemy `R-tree` style bounding-box query path used for the cone weapon candidate lookup
 
 ## Controls
 
-- `W A S D`: move horizontally, vertically, and diagonally
-- `Left Mouse`: shoot
+- `W A S D`: move
+- `Left Mouse`: fire weapon
 - `R`: reload
-- `M`: toggle visible area between `10x10` and `40x40`
-- `U`: toggle quadtree overlay on and off
+- `P`: pause and zoom the map out
+- `M`: toggle map zoom
+- `T`: switch between `QuadTree` and `Brute Force` spatial query modes
+- `U`: toggle quadtree debug overlay
 
-## Notes
+## Spatial Indexing Demo
 
-- The map is `80 x 80` tiles.
-- The default visible play space is `10 x 10` tiles, with a toggle to expand to `40 x 40`.
-- The project includes quadtree visualization for spatial queries and collision broad-phase debugging.
+This project is designed to show concepts similar to vector databases:
+
+- game objects are stored by position in space
+- a spatial index narrows down likely nearby candidates
+- exact checks happen after candidate retrieval
+- different query structures can be used for different tasks
+
+In the current build:
+
+- the `QuadTree` handles broad-phase lookup for bullets, pickups, and nearby world interactions
+- the `Brute Force` mode lets you compare behavior against no spatial partitioning
+- the cone weapon uses an `R-tree` style hierarchy for enemy candidate retrieval inside an area query
+
+The HUD shows:
+
+- active spatial mode
+- quadtree node/candidate information
+- per-frame and smoothed spatial timing statistics
+- pickup counts
+- active weapon and timed buff state
 
 ## Build Requirements
 
 Install these before building:
 
-- Godot 4.2+ editor
+- Godot `4.6+`
 - Python
 - SCons
-- A C++ compiler toolchain for Godot on your platform
+- C++ build tools for your platform
 
 ## Windows Build
 
 1. Run `scripts\setup_dependencies.bat`
 2. Run `scripts\build_windows_debug.bat`
-3. Open the project folder in Godot
+3. Open the project in Godot from `project.godot`
 
-If you want release binaries or another platform, use the same `SConstruct` file with the matching `platform=` and `target=` values.
+## Notes
+
+- The cone weapon is a temporary pickup effect, not the default weapon
+- Pickup counts are randomized at startup, with each pickup type spawning between `5` and `20` times
+- The project uses native C++ gameplay code, so logic changes require rebuilding the extension DLL
