@@ -55,7 +55,7 @@ void GameWorld::ensure_input_actions() {
         Key keycode;
     };
 
-    const KeyBinding key_bindings[] = {
+const KeyBinding key_bindings[] = {
         {"move_up", Key::KEY_W},
         {"move_down", Key::KEY_S},
         {"move_left", Key::KEY_A},
@@ -65,6 +65,7 @@ void GameWorld::ensure_input_actions() {
         {"toggle_map_view", Key::KEY_M},
         {"toggle_spatial_mode", Key::KEY_T},
         {"toggle_quadtree_overlay", Key::KEY_U},
+        {"switch_level", Key::KEY_L},
     };
 
     for (const KeyBinding &binding : key_bindings) {
@@ -411,6 +412,7 @@ void GameWorld::update_hud() {
     hud_text += "\nPause: P";
     hud_text += "  Spatial Mode: ";
     hud_text += use_quadtree_spatial_index ? "QuadTree (T)" : "Brute Force (T)";
+    hud_text += "  Swap Level: L";
     hud_text += "\nWeapon: ";
     hud_text += player->is_cone_weapon_active() ? "Cone Arc" : "Standard";
     if (player->is_cone_weapon_active()) {
@@ -1847,6 +1849,14 @@ void GameWorld::_unhandled_input(const Ref<InputEvent> &event) {
         rebuild_spatial_index();
         update_hud();
         queue_redraw();
+        return;
+    }
+
+    if (event.is_valid() && event->is_action_pressed("switch_level")) {
+        SceneTree *tree = get_tree();
+        if (tree != nullptr) {
+            tree->change_scene_to_file("res://scenes/efficiency_level.tscn");
+        }
         return;
     }
 
